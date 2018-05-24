@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.0/jquery.min.js"></script>
+    <script src="https://static.freshdev.io/fdk/2.0/assets/fresh_client.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://static.freshdev.io/fdk/2.0/assets/freshdesk.css">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.6-rc.0/css/select2.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.6-rc.0/js/select2.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="container">
+      <div id="apikeyAlert" class="alert alert-danger" style="display:none;">
+        Please select at least one company
+      </div>
+      <br />
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="form-group" id="get_credentials" style="padding-bottom: 40px;">
+            <label for="apikey">API Key:</label>
+            <input class="form-control" id="apikey" type="text" name="apikey" required>
+            <small>Click <a href="https://support.freshdesk.com/support/solutions/articles/215517-how-to-find-your-api-key" target="_blank">here</a>  to get instruction on how to find your API key.</small>
+            <br>
+            <br>
+            <label for="domainname">Subdomain name</label>
+            <input class="form-control" id="domainname" type="text" name="domainname" required>
+            <small>Please enter subdomain of your Freshdesk account. Eg: www.<b>subdomain</b>.freshdesk.com</small>
+            <br>
+            <br>
+            <button class="btn btn-primary" id="getCompany" type="button" name="getCompany">Next</button>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+      <br>
+        <h5 id="loadingCompany" style="color: red;">Loading companies... Please Wait!</h5>
+        <h5 id="loadingCompanyDone" style="color: green;">Loading complete!</h5>
+        <div class="form-group" id="company_select_div">
+          <label for="company_select">Select companies</label>
+          <select class="companies_select" id="company_select" name="companies[]" multiple="multiple" style="width:60%">
+          </select>
+        </div>
+
+        <div id="alert_agent_div">
+          <p>Alert agent when the purchased hours reached atleast <input id="alert_agent_hours" name="alert_agent_hours" type="number" style="max-width:10%"> hours</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="text/javascript">
+
+  var selectData = [];
+  function get_company(page ,companyOptions, client, subDomain,isConfig, companiesSelected){
+    jQuery('#loadingCompany').show();
+    var companyUrl = `https://${subDomain}.freshdesk.com/api/v2/companies?per_page=10&page=${page}`;
+    client.request.get(companyUrl, companyOptions)
+    .then(function(companiesData){
+        var companiesDataArr =[]; 
+        var parsedCompaniesData = JSON.parse(companiesData.response);
+        jQuery.map(parsedCompaniesData, function (company_item){
+          var selectValue = company_item.id;
+          var selectText  = company_item.name;
+          companiesDataArr.push(company_item);
+          jQuery('#company_select').append(jQuery('<option>',{
+            value: selectValue,
+            text: selectText
+          }));
+        })
+        if(companiesData.headers.link){
+          page = page +1;
+          companiesDataArr.map(function(firstLevelCompany){
+            companiesSelected.map(function(secondLevelCompany){
+              var secondLevelCompanyId = parseInt(secondLevelCompany);
+              if(firstLevelCompany.id == secondLevelCompanyId){
+                selectData.push(firstLevelCompany.id);
+                
+              }
+            });
+          });
+          get_company(page ,companyOptions, client, subDomain,isConfig, companiesSelected);
+        }
+        else{
+          if(isConfig){
+            companiesDataArr.map(function(firstLevelCompany){
+              companiesSelected.map(function(secondLevelCompany){
+                var secondLevelCompanyId = parseInt(secondLevelCompany);
+                if(firstLevelCompany.id == secondLevelCompanyId){
+                  selectData.push(firstLevelCompany.id);
+                  jQuery('#company_select').val(selectData).trigger("change");  
+                }
+              });
+            });
+            jQuery('#loadingCompany').hide();
+            jQuery('#loadingCompanyDone').show(); 
+          }else{
+            jQuery('#loadingCompany').hide();
+            jQuery('#loadingCompanyDone').show(); 
+          }
+        }
+    },function(companiesDataErr){
+        if(companiesDataErr.statusText == 'Unauthorized' || companiesDataErr.status == 401){
+          jQuery('#apikeyAlert').text('Could not fetch company details. Please enter a valid api key').show();
+        }
+        else if(companiesDataErr.statusText == 'Not Found' || companiesDataErr.status == 404) {
+          jQuery('#apikeyAlert').text('Could not fetch company details. Please enter a valid subdomain').show();
+        }
+        else if(companiesDataErr.statusText == 'error' || companiesDataErr.status == 0) {
+          jQuery('#apikeyAlert').text('Please fill the required fields').show();
+        }
+    })
+  }    
+  jQuery('#company_select_div').hide();
+    jQuery('#alert_agent_div').hide();
+    $(document).ready( function() {
+      app.initialized()
+      .then(function(_client) {
+        var client = _client;
+        jQuery('#loadingCompany').hide();
+        jQuery('#loadingCompanyDone').hide();
+        jQuery('#getCompany').click(function(){
+          var subDomain = jQuery('#domainname').val();
+          var apiKey = jQuery('#apikey').val();
+          var btoapiKey = "Basic "+btoa(apiKey);
+          if(subDomain == '' && apiKey == ''){
+            jQuery('#apikeyAlert').text('Please enter the required fields').show();
+          }
+          else if (apiKey == '') {
+            jQuery('#apikeyAlert').text('Please enter api key').show();
+          }
+          else if(subDomain == ''){
+            jQuery('#apikeyAlert').text('Please enter sub domain').show();
+          }
+          else {
+            var companyOptions = {
+              headers: {
+                'Content-Type' : 'application/json',
+                'Authorization': btoapiKey
+              }
+            };
+            var page = 1;
+            var isConfig = false;
+            var companiesSelected = [];
+            jQuery('#get_credentials').hide();
+            jQuery('#company_select_div').show();
+            jQuery('#alert_agent_div').show();
+            jQuery('#alert_agent_hours').attr("value", 15);
+            get_company(page,companyOptions, client, subDomain, isConfig, companiesSelected)
+          }
+        });
+      });
+    });
+    
+    jQuery('.companies_select').select2({
+       placeholder: 'Select companies'
+    });
+
+    function getConfigs(inputConfigs) {
+      jQuery('#get_credentials').hide();
+      jQuery('#company_select_div').show();
+      jQuery('#alert_agent_div').show();
+      jQuery('#loadingCompany').hide();
+      jQuery('#loadingCompanyDone').hide();
+      var subDomain = inputConfigs.subdomain;
+      var apiKey = inputConfigs.apikey;
+      var btoapiKey = "Basic "+btoa(apiKey);
+      var companiesDataArr = [];
+      var companiesSelected = inputConfigs.companies;
+      var alertAgentHours = inputConfigs.alertAgentHours;
+      jQuery('#domainname').val(subDomain);
+      jQuery('#apikey').val(apiKey);
+      jQuery('#alert_agent_hours').val(alertAgentHours);
+            app.initialized()
+      .then(function(_client) {
+        var client = _client;
+        var companyOptions = {
+            headers: {
+              'Content-Type' : 'application/json',
+              'Authorization': btoapiKey
+            }
+          };
+        var page = 1;
+        var isConfig = true;
+        get_company(page,companyOptions, client, subDomain, isConfig, companiesSelected)
+      });
+    }
+
+    function postConfigs() {
+      var companies = [];
+      jQuery('#company_select :selected').each(function(){
+        companies.push(jQuery(this).val());
+      });
+      var alertAgentHours = jQuery('#alert_agent_hours').val();
+      var subdomain = jQuery('#domainname').val();
+      var apikey = jQuery('#apikey').val();
+      return {
+        companies: companies,
+        subdomain: subdomain,
+        apikey: apikey,
+        alertAgentHours: alertAgentHours
+      }
+    }
+
+    function validate() {
+      var companies = [];
+      jQuery('#company_select :selected').each(function(){
+        companies.push(jQuery(this).val());
+      });
+      if(jQuery('#company_select_div').is(':hidden')){
+        jQuery('#apikeyAlert').text('Please enter the required fields and click next to select companies').show();
+        return false;
+      }
+      else if (companies.length == 0) {
+        jQuery('#apikeyAlert').text('Please select at least one company').show();
+        return false;
+      }
+      else {
+        return true;
+      }
+    }
+  </script>
+
+</body>
+</html>
+
+
